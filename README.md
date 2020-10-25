@@ -1,8 +1,20 @@
-# SnowflakeEx, a pure-elixir driver for Snowflake (WIP, NOT PRODUCTION READY YET)
+# SnowflakeEx
+
+[![hex.pm](https://img.shields.io/hexpm/v/snowflake_elixir.svg)](https://hex.pm/packages/snowflake_elixir)
+[![hexdocs.pm](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/snowflake_elixir/)
+[![hex.pm](https://img.shields.io/hexpm/dt/snowflake_elixir.svg)](https://hex.pm/packages/snowflake_elixir)
+[![hex.pm](https://img.shields.io/hexpm/l/snowflake_elixir.svg)](https://hex.pm/packages/snowflake_elixir)
+[![github.com](https://img.shields.io/github/last-commit/joshuataylor/snowflake_elixir.svg)](https://github.com/joshuataylor/snowflake_elixir/commits/master)
+
+**WIP, NOT PRODUCTION READY YET**
+
+NOTE: THIS DRIVER/CONNECTOR IS NOT OFFICIALLY AFFILIATED WITH SNOWFLAKE, NOR HAS OFFICIAL SUPPORT FROM THEM.
+
+A pure-elixir driver for [Snowflake](https://www.snowflake.com/), the cloud data platform.
 
 ## Installation
 
-The package can be installed by adding `snowflake_elixir` to your list of dependencies in `mix.exs`:
+Add `snowflake_elixir` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -13,8 +25,6 @@ end
 ```
 
 # What this is
-
-* NOTE: THIS DRIVER/CONNECTOR IS NOT OFFICIALLY AFFILIATED WITH SNOWFLAKE, NOR HAS OFFICIAL SUPPORT FROM THEM.
 
 It uses the Snowflake REST API to communicate with Snowflake, with an earlier version set for JSON.
 There isn't an Elixir Parquet/Arrow/IPC library (yet!), but like the [Javascript library](https://github.com/snowflakedb/snowflake-connector-nodejs)

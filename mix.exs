@@ -1,6 +1,8 @@
 defmodule SnowflakeEx.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/joshuataylor/snowflake_elixir"
+
   def project do
     [
       app: :snowflake_elixir,
@@ -8,13 +10,12 @@ defmodule SnowflakeEx.MixProject do
       elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      source_url: "https://github.com/joshuataylor/snowflake_elixir",
       description: "Snowflake driver written in pure Elixir, using db_connection",
       package: package(),
+      docs: docs()
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger],
@@ -22,7 +23,6 @@ defmodule SnowflakeEx.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:db_connection, "~> 2.2"},
@@ -43,8 +43,19 @@ defmodule SnowflakeEx.MixProject do
       maintainers: ["Josh Taylor"],
       licenses: ["MIT"],
       links: %{
-        GitHub: "https://github.com/joshuataylor/snowflake_elixir"
+        GitHub: @source_url
       }
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      source_url: @source_url,
+      extras: [
+        "CHANGELOG.md",
+        "README.md"
+      ]
     ]
   end
 end
