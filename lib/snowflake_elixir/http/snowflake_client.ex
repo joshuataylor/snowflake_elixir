@@ -1,9 +1,17 @@
 defmodule SnowflakeEx.HTTPClient do
   @moduledoc ~S"""
-  Helper library for interacting with Snowflakes REST API.
+  Helper library for interacting with Snowflakes REST API. This should not be called directly, use the
+  `SnowflakeEx.SnowflakeConnectionServer` module instead, as it will use a GenServer.
   """
   require Logger
 
+  @doc ~S"""
+  Logs into Snowflake, returning a token and Session ID. The token can be used for querying in future.
+
+  To return only a subset of results, an integer value can be passed to partial, which is then useed to set the
+  session variable [ROWS_PER_RESULTSET](https://docs.snowflake.com/en/sql-reference/parameters.html#rows-per-resultset)
+  """
+  @spec login(String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), integer()) :: {:ok, %{token: String.t(), session_id: String.t()}} | {:error, String.t()}
   def login(host, account_name, warehouse, database, schema, username, password, partial) do
     data = %{
       data: %{
@@ -13,7 +21,7 @@ defmodule SnowflakeEx.HTTPClient do
         CLIENT_APP_VERSION: "1.5.3",
         LOGIN_NAME: username,
         SESSION_PARAMETERS: %{
-          ROWS_PER_RESULTSET: partial,
+          ROWS_PER_RESULTSET: (if partial == 0, do: false, else: partial),
           VALIDATE_DEFAULT_PARAMETERS: true
         },
         CLIENT_ENVIRONMENT: %{
@@ -50,72 +58,16 @@ defmodule SnowflakeEx.HTTPClient do
     |> process_login()
   end
 
+  @doc ~S"""
+  Runs a query from a string, then returns the result in a %SnowflakeEx.Result{} struct.
+  """
+  @spec query(String.t(), String.t(), String.t(), Keyword.t()) :: %SnowflakeEx.Result{}
   def query(host, token, query, opts) do
     params = Keyword.get(opts, :params, [])
     async = Keyword.get(opts, :async, false)
     first_only = Keyword.get(opts, :first_only, false)
 
-    query(host, token, query, params, async, first_only)
-  end
-
-  defp query(host, token, query, [], false, first_chunk) do
-    Logger.debug("Running query #{query} non-async, first chunk: #{first_chunk}")
-
-    HTTPoison.post!(
-      snowflake_query_url(host),
-      snowflake_query_headers(query, false),
-      [
-        {"Content-Type", "application/json"},
-        {"accept", "application/snowflake"},
-        {"Authorization", "Snowflake Token=\"#{token}\""}
-      ],
-      hackney: [
-        :insecure,
-        pool: :snowflake_pool
-      ]
-    )
-    |> process_query(first_chunk)
-  end
-
-  defp query(host, token, query, [], true, _first_chunk) do
-    Logger.debug("Running query #{query} async")
-
-    HTTPoison.post!(
-      snowflake_query_url(host),
-      snowflake_query_headers(query, true),
-      [
-        {"Content-Type", "application/json"},
-        {"accept", "application/snowflake"},
-        {"Authorization", "Snowflake Token=\"#{token}\""}
-      ],
-      hackney: [
-        :insecure,
-        pool: :snowflake_pool
-      ]
-    )
-    |> Map.get(:body)
-    |> Jason.decode!()
-    |> Map.get("data")
-    |> Map.get("queryId")
-    |> monitor_query_id(host, token, 1)
-  end
-
-  defp query(host, token, query, _params, true, _first_chunk) do
-    HTTPoison.post!(
-      snowflake_query_url(host),
-      snowflake_query_headers(query, false),
-      [
-        {"Content-Type", "application/json"},
-        {"accept", "application/snowflake"},
-        {"Authorization", "Snowflake Token=\"#{token}\""}
-      ],
-      hackney: [
-        :insecure,
-        pool: :snowflake_pool
-      ]
-    )
-    |> Map.get(:body)
-    |> Jason.decode!()
+    run_query(host, token, query, params, async, first_only)
   end
 
   def insert(host, token, query, _params, connect_opts) do
@@ -137,7 +89,7 @@ defmodule SnowflakeEx.HTTPClient do
     |> process_response(false)
   end
 
-  def monitor_query_id(monitor_id, host, token, num) when num < 1000 do
+  defp monitor_query_id(monitor_id, host, token, num) when num < 1000 do
     :timer.sleep(50)
 
     resp =
@@ -164,11 +116,11 @@ defmodule SnowflakeEx.HTTPClient do
     end
   end
 
-  def monitor_query_id(_monitor_id, _host, _token, num) do
+  defp monitor_query_id(_monitor_id, _host, _token, num) do
     {:error, "failed after #{num} attempts"}
   end
 
-  def s3_download(url, encryption_key, encryption_key_md5) do
+  defp s3_download(url, encryption_key, encryption_key_md5) do
     HTTPoison.get!(
       url,
       [
@@ -186,10 +138,69 @@ defmodule SnowflakeEx.HTTPClient do
     |> :zlib.gunzip()
   end
 
+  defp run_query(host, token, query, [], false, first_chunk) do
+    HTTPoison.post!(
+      snowflake_query_url(host),
+      snowflake_query_headers(query, false),
+      [
+        {"Content-Type", "application/json"},
+        {"accept", "application/snowflake"},
+        {"Authorization", "Snowflake Token=\"#{token}\""}
+      ],
+      hackney: [
+        :insecure,
+        pool: :snowflake_pool
+      ]
+    )
+    |> process_query(first_chunk)
+  end
+
+  # Executes a query, then monitors the response.
+  defp run_query(host, token, query, [], true, _first_chunk) do
+    HTTPoison.post!(
+      snowflake_query_url(host),
+      snowflake_query_headers(query, true),
+      [
+        {"Content-Type", "application/json"},
+        {"accept", "application/snowflake"},
+        {"Authorization", "Snowflake Token=\"#{token}\""}
+      ],
+      hackney: [
+        :insecure,
+        pool: :snowflake_pool
+      ]
+    )
+    |> Map.get(:body)
+    |> Jason.decode!()
+    |> Map.get("data")
+    |> Map.get("queryId")
+    |> monitor_query_id(host, token, 1)
+  end
+
+  defp run_query(host, token, query, _params, true, _first_chunk) do
+    HTTPoison.post!(
+      snowflake_query_url(host),
+      snowflake_query_headers(query, false),
+      [
+        {"Content-Type", "application/json"},
+        {"accept", "application/snowflake"},
+        {"Authorization", "Snowflake Token=\"#{token}\""}
+      ],
+      hackney: [
+        :insecure,
+        pool: :snowflake_pool
+      ]
+    )
+    |> Map.get(:body)
+    |> Jason.decode!()
+  end
+
+  # Decodes a column type of null to nil
   defp decode_column(%{"scale" => 0, "type" => "fixed", "byteLength" => nil}, nil) do
     nil
   end
 
+  # Decodes an integer column type
   defp decode_column(%{"scale" => 0, "type" => "fixed", "byteLength" => nil}, value) do
     case Integer.parse(value) do
       {num, ""} ->
@@ -200,6 +211,7 @@ defmodule SnowflakeEx.HTTPClient do
     end
   end
 
+  # for everything else, just return the value
   defp decode_column(_, value), do: value
 
   defp process_query(%{status_code: 200, body: body}, first_chunk) do
@@ -234,8 +246,6 @@ defmodule SnowflakeEx.HTTPClient do
          } = data,
          first_chunk
        ) do
-    Logger.debug("found #{length(chunks)} chunks")
-
     parsed =
       if first_chunk do
         chunks
@@ -274,8 +284,6 @@ defmodule SnowflakeEx.HTTPClient do
          } = data,
          first_chunk
        ) do
-    Logger.debug("found #{length(chunks)} chunks")
-
     parsed =
       if first_chunk do
         chunks

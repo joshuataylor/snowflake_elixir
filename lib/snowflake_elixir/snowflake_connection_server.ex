@@ -55,7 +55,7 @@ defmodule SnowflakeEx.SnowflakeConnectionServer do
         schema,
         username,
         password,
-        false
+        0
       )
 
     case result do
@@ -64,15 +64,6 @@ defmodule SnowflakeEx.SnowflakeConnectionServer do
     end
   end
 
-  #  @impl true
-  #  def handle_call({:select_query, statement, params, fopts}, from, state) do
-  #    connect_opts = Keyword.get(state, :opts)
-  #    host = Keyword.get(connect_opts, :host)
-  #    token = Keyword.get(opts, :token)
-  #
-  #    {:reply, SnowflakeEx.HTTPClient.query(host, token, statement, connect_opts), opts}
-  #  end
-  #
   @impl true
   def handle_call({:select_query, statement}, _state, opts) do
     connect_opts = Keyword.get(opts, :opts)
