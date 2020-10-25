@@ -7,7 +7,10 @@ defmodule SnowflakeEx.MixProject do
       version: "0.1.0",
       elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      source_url: "https://github.com/joshuataylor/snowflake_elixir",
+      description: "Snowflake driver written in pure Elixir, using db_connection",
+      package: package(),
     ]
   end
 
@@ -31,6 +34,16 @@ defmodule SnowflakeEx.MixProject do
       {:httpoison, "~> 1.7"},
       {:uuid, "~> 1.1"},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
+    ]
+  end
+
+  defp package do
+    [
+      maintainers: ["Josh Taylor"],
+      licenses: ["MIT"],
+      links: %{
+        GitHub: "https://github.com/joshuataylor/snowflake_elixir"
+      }
     ]
   end
 end
