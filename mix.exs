@@ -34,6 +34,7 @@ defmodule SnowflakeEx.MixProject do
       {:httpoison, "~> 1.7"},
       {:uuid, "~> 1.1"},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 
