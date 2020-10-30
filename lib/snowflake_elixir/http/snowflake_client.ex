@@ -50,7 +50,9 @@ defmodule SnowflakeEx.HTTPClient do
       ],
       hackney: [
         :insecure,
-        pool: :snowflake_pool
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
       ]
     )
     |> Map.get(:body)
@@ -81,7 +83,9 @@ defmodule SnowflakeEx.HTTPClient do
       ],
       hackney: [
         :insecure,
-        pool: :snowflake_pool
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
       ]
     )
     |> Map.get(:body)
@@ -92,27 +96,28 @@ defmodule SnowflakeEx.HTTPClient do
   defp monitor_query_id(monitor_id, host, token, num) when num < 1000 do
     :timer.sleep(50)
 
-    resp =
-      HTTPoison.get!(
-        "#{host}/queries/#{monitor_id}/result",
-        [
-          {"Content-Type", "application/json"},
-          {"accept", "application/snowflake"},
-          {"Authorization", "Snowflake Token=\"#{token}\""}
-        ],
-        hackney: [
-          :insecure,
-          pool: :snowflake_pool
-        ]
-      )
+    response = HTTPoison.get!(
+      "#{host}/queries/#{monitor_id}/result",
+      [
+        {"Content-Type", "application/json"},
+        {"accept", "application/snowflake"},
+        {"Authorization", "Snowflake Token=\"#{token}\""}
+      ],
+      hackney: [
+        :insecure,
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
+      ]
+    )
 
-    resp
-    |> Map.get(:body)
-    |> Jason.decode!()
-    |> if do
-      process_query(resp, false)
-    else
+    if Map.get(response, :body, "") == "" do
+      require IEx
+      IEx.pry
       monitor_query_id(monitor_id, host, token, num + 1)
+    else
+      response
+      |> process_query(false)
     end
   end
 
@@ -149,7 +154,9 @@ defmodule SnowflakeEx.HTTPClient do
       ],
       hackney: [
         :insecure,
-        pool: :snowflake_pool
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
       ]
     )
     |> process_query(first_chunk)
@@ -167,7 +174,9 @@ defmodule SnowflakeEx.HTTPClient do
       ],
       hackney: [
         :insecure,
-        pool: :snowflake_pool
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
       ]
     )
     |> Map.get(:body)
@@ -188,7 +197,9 @@ defmodule SnowflakeEx.HTTPClient do
       ],
       hackney: [
         :insecure,
-        pool: :snowflake_pool
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
       ]
     )
     |> Map.get(:body)
@@ -229,7 +240,7 @@ defmodule SnowflakeEx.HTTPClient do
   end
 
   defp process_response(%{"success" => false, "message" => message, "code" => error_code, "data" => %{"sqlState" => sql_error}}, _) do
-    {:error, %SnowflakeEx.Result{messages: [%{message: message, severity: :error, error_code: error_code, sql_error: sql_error}]}}
+    {:error, %SnowflakeEx.Result{success: false, messages: [%{message: message, severity: :error, error_code: error_code, sql_error: sql_error}]}}
   end
 
   defp process_query_result_format(
@@ -267,7 +278,7 @@ defmodule SnowflakeEx.HTTPClient do
 
     columns = Enum.map(row_type, fn %{"name" => name} -> name end)
 
-    {:ok, %SnowflakeEx.Result{rows: row_data, columns: columns, num_rows: total, metadata: data, messages: %{message: row_data, severity: :debug}}}
+    {:ok, %SnowflakeEx.Result{success: false, rows: row_data, columns: columns, num_rows: total, metadata: data, messages: %{message: row_data, severity: :debug}}}
   end
 
   defp process_query_result_format(
@@ -305,7 +316,7 @@ defmodule SnowflakeEx.HTTPClient do
 
     columns = Enum.map(row_type, fn %{"name" => name} -> name end)
 
-    {:ok, %SnowflakeEx.Result{rows: row_data, columns: columns, num_rows: total, metadata: data, messages: [%{message: row_data, severity: :info}]}}
+    {:ok, %SnowflakeEx.Result{success: false, rows: row_data, columns: columns, num_rows: total, metadata: data, messages: [%{message: row_data, severity: :info}]}}
   end
 
   defp process_query_result_format(
@@ -316,7 +327,7 @@ defmodule SnowflakeEx.HTTPClient do
     row_data = process_row_data(rows, row_type)
 
     columns = Enum.map(row_type, fn %{"name" => name} -> name end)
-    {:ok, %SnowflakeEx.Result{rows: row_data, columns: columns, num_rows: total, metadata: data, messages: [%{message: row_data, severity: :info}]}}
+    {:ok, %SnowflakeEx.Result{success: false, rows: row_data, columns: columns, num_rows: total, metadata: data, messages: [%{message: row_data, severity: :info}]}}
   end
 
   defp process_row_data(rows, row_type) do
