@@ -32,7 +32,7 @@ it seems that we just get back JSON instead of an Arrow file.
 
 Once I have time I will write a library that will manage this, as [apparently it's faster](https://www.snowflake.com/blog/fetching-query-results-from-snowflake-just-got-a-lot-faster-with-apache-arrow/)
 
-If you want to use this as an [ecto_sql](https://github.com/elixir-ecto/ecto_sql) adapter, go and grab the [snowflake_elixir_ecto]() adapter
+If you want to use this as an [ecto_sql](https://github.com/elixir-ecto/ecto_sql) adapter, go and grab the [snowflake_elixir_ecto](https://github.com/joshuataylor/snowflake_elixir_ecto) adapter
 as well, as you can use that with ecto. This is just the raw library that uses dbconnection.
 
 One of the major notes when using Ecto is you will need to enable Snowflakes `QUOTED_IDENTIFIERS_IGNORE_CASE` setting, which you can
@@ -82,3 +82,19 @@ query has finished, instead of leaving the HTTP session open.
 * `:show_sensitive_data_on_connection_error` - show connection data and
   configuration whenever there is an error attempting to connect to the
   database
+
+## Example usage with a raw connection
+
+You can create a simple connection and query using the following
+
+```
+{:ok, pid} = DBConnection.start_link(SnowflakeEx.Protocol, 
+  [host: "https://youraccount.snowflakecomputing.com/",
+  username: "user",
+  password: "pass",
+  account_name: "youraccount",
+  database: "database"]
+)
+
+{:ok, query} = SnowflakeEx.query(pid, "select * from database.schema.table limit 1", [])
+```
