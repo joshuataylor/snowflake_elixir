@@ -45,6 +45,8 @@ defmodule SnowflakeEx.SnowflakeConnectionServer do
     database = Keyword.get(opts, :database, nil)
     warehouse = Keyword.get(opts, :warehouse, nil)
     schema = Keyword.get(opts, :schema, nil)
+    role = Keyword.get(opts, :role, nil)
+    snowflake_options = Keyword.get(opts, :snowflake_options, %{})
 
     result =
       SnowflakeEx.HTTPClient.login(
@@ -55,11 +57,22 @@ defmodule SnowflakeEx.SnowflakeConnectionServer do
         schema,
         username,
         password,
-        0
+        role,
+        snowflake_options
       )
 
     case result do
-      {:ok, %{token: token, session_id: session_id}} -> {:ok, token: token, opts: opts, session_id: session_id}
+      {:ok, %{token: token, session_id: session_id}} ->
+        # use database
+        if database != nil do
+          SnowflakeEx.HTTPClient.query(host, token, "use database #{database}", [])
+        end
+        # use schema
+        if schema != nil do
+          SnowflakeEx.HTTPClient.query(host, token, "use schema #{schema}", [])
+        end
+
+        {:ok, token: token, opts: opts, session_id: session_id}
       {:error, reason} -> {:stop, reason}
     end
   end

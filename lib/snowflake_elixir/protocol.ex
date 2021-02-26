@@ -53,8 +53,6 @@ defmodule SnowflakeEx.Protocol do
     statement = IO.iodata_to_binary(statement)
     # hack to fix migrations, @todo fix
     statement = if String.contains?(String.downcase(statement), "CREATE TABLE IF NOT EXISTS") do
-      schema = Keyword.get(state.opts, :schema)
-      schema = Keyword.get(state.opts, :database)
       "#{statement}"
     else
       statement
@@ -133,11 +131,11 @@ defmodule SnowflakeEx.Protocol do
     raise("Not implemented handle_status")
   end
 
-  defp handle_transaction(query, statement, state, mode) do
+  defp handle_transaction(query, _statement, state, _mode) do
     case SnowflakeEx.SnowflakeConnectionServer.query(state.pid, query) do
       {:ok, %SnowflakeEx.Result{} = result} -> {:ok, result, %{state | snowflake: :transaction}}
 
-      {:error, foo} ->
+      {:error, _} ->
         message = "Query execution error"
         exception = %ConnectionError{message: message}
         {:disconnect, exception, state}

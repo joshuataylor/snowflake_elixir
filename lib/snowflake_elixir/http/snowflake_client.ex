@@ -7,12 +7,9 @@ defmodule SnowflakeEx.HTTPClient do
 
   @doc ~S"""
   Logs into Snowflake, returning a token and Session ID. The token can be used for querying in future.
-
-  To return only a subset of results, an integer value can be passed to partial, which is then useed to set the
-  session variable [ROWS_PER_RESULTSET](https://docs.snowflake.com/en/sql-reference/parameters.html#rows-per-resultset)
   """
-  @spec login(String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), integer()) :: {:ok, %{token: String.t(), session_id: String.t()}} | {:error, String.t()}
-  def login(host, account_name, warehouse, database, schema, username, password, partial) do
+  @spec login(String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), []) :: {:ok, %{token: String.t(), session_id: String.t()}} | {:error, String.t()}
+  def login(host, account_name, warehouse, database, schema, username, password, role, snowflake_options) do
     data = %{
       data: %{
         ACCOUNT_NAME: account_name,
@@ -20,10 +17,9 @@ defmodule SnowflakeEx.HTTPClient do
         CLIENT_APP_ID: "JavaScript",
         CLIENT_APP_VERSION: "1.5.3",
         LOGIN_NAME: username,
-        SESSION_PARAMETERS: %{
-          ROWS_PER_RESULTSET: (if partial == 0, do: false, else: partial),
+        SESSION_PARAMETERS: Map.merge(%{
           VALIDATE_DEFAULT_PARAMETERS: true
-        },
+        }, snowflake_options),
         CLIENT_ENVIRONMENT: %{
           schema: schema,
           tracing: "DEBUG",
@@ -42,7 +38,7 @@ defmodule SnowflakeEx.HTTPClient do
     HTTPoison.post!(
       "#{host}/session/v1/login-request?databaseName=#{database}&schemaName=#{schema}&warehouse=#{
         warehouse
-      }",
+      }&roleName=#{role}",
       Jason.encode!(data),
       [
         {"Content-Type", "application/json"},
@@ -112,8 +108,6 @@ defmodule SnowflakeEx.HTTPClient do
     )
 
     if Map.get(response, :body, "") == "" do
-      require IEx
-      IEx.pry
       monitor_query_id(monitor_id, host, token, num + 1)
     else
       response
