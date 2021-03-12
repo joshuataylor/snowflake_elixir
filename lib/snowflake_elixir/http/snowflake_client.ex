@@ -8,8 +8,28 @@ defmodule SnowflakeEx.HTTPClient do
   @doc ~S"""
   Logs into Snowflake, returning a token and Session ID. The token can be used for querying in future.
   """
-  @spec login(String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), String.t(), []) :: {:ok, %{token: String.t(), session_id: String.t()}} | {:error, String.t()}
-  def login(host, account_name, warehouse, database, schema, username, password, role, snowflake_options) do
+  @spec login(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          []
+        ) :: {:ok, %{token: String.t(), session_id: String.t()}} | {:error, String.t()}
+  def login(
+        host,
+        account_name,
+        warehouse,
+        database,
+        schema,
+        username,
+        password,
+        role,
+        snowflake_options
+      ) do
     data = %{
       data: %{
         ACCOUNT_NAME: account_name,
@@ -17,9 +37,13 @@ defmodule SnowflakeEx.HTTPClient do
         CLIENT_APP_ID: "JavaScript",
         CLIENT_APP_VERSION: "1.5.3",
         LOGIN_NAME: username,
-        SESSION_PARAMETERS: Map.merge(%{
-          VALIDATE_DEFAULT_PARAMETERS: true
-        }, snowflake_options),
+        SESSION_PARAMETERS:
+          Map.merge(
+            %{
+              VALIDATE_DEFAULT_PARAMETERS: true
+            },
+            snowflake_options
+          ),
         CLIENT_ENVIRONMENT: %{
           schema: schema,
           tracing: "DEBUG",
@@ -45,7 +69,78 @@ defmodule SnowflakeEx.HTTPClient do
         {"'Accept", "application/json"}
       ],
       hackney: [
-        :insecure,
+        pool: :snowflake_pool,
+        timeout: 180_000,
+        recv_timeout: 180_000
+      ]
+    )
+    |> Map.get(:body)
+    |> Jason.decode!()
+    |> process_login()
+  end
+
+  @spec oauth_login(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          []
+        ) :: {:ok, %{token: String.t(), session_id: String.t()}} | {:error, String.t()}
+  def oauth_login(
+        host,
+        account_name,
+        warehouse,
+        database,
+        schema,
+        username,
+        token,
+        role,
+        snowflake_options
+      ) do
+    data = %{
+      data: %{
+        ACCOUNT_NAME: account_name,
+        AUTHENTICATOR: "OAUTH",
+        CLIENT_APP_ID: "JavaScript",
+        CLIENT_APP_VERSION: "1.5.3",
+        TOKEN: token,
+        LOGIN_NAME: username,
+        SESSION_PARAMETERS:
+          Map.merge(
+            %{
+              VALIDATE_DEFAULT_PARAMETERS: true
+            },
+            snowflake_options
+          ),
+        CLIENT_ENVIRONMENT: %{
+          schema: schema,
+          tracing: "DEBUG",
+          OS: "Linux",
+          OCSP_MODE: "FAIL_OPEN",
+          APPLICATION: "SnowflakeEx",
+          warehouse: warehouse,
+          database: database,
+          serverURL: host,
+          user: username,
+          account: account_name
+        }
+      }
+    }
+
+    HTTPoison.post!(
+      "#{host}/session/v1/login-request?databaseName=#{database}&schemaName=#{schema}&warehouse=#{
+        warehouse
+      }&roleName=#{role}",
+      Jason.encode!(data),
+      [
+        {"Content-Type", "application/json"},
+        {"'Accept", "application/json"}
+      ],
+      hackney: [
         pool: :snowflake_pool,
         timeout: 180_000,
         recv_timeout: 180_000
@@ -78,7 +173,6 @@ defmodule SnowflakeEx.HTTPClient do
         {"Authorization", "Snowflake Token=\"#{token}\""}
       ],
       hackney: [
-        :insecure,
         pool: :snowflake_pool,
         timeout: 180_000,
         recv_timeout: 180_000
@@ -89,23 +183,40 @@ defmodule SnowflakeEx.HTTPClient do
     |> process_response(false)
   end
 
-  defp monitor_query_id(monitor_id, host, token, num) when num < 1000 do
-    :timer.sleep(50)
-
-    response = HTTPoison.get!(
-      "#{host}/queries/#{monitor_id}/result",
+  def get_query_by_id(host, token, query_id) do
+    HTTPoison.get!(
+      "#{host}/queries/#{query_id}/result",
       [
         {"Content-Type", "application/json"},
         {"accept", "application/snowflake"},
         {"Authorization", "Snowflake Token=\"#{token}\""}
       ],
       hackney: [
-        :insecure,
         pool: :snowflake_pool,
-        timeout: 180_000,
-        recv_timeout: 180_000
+        timeout: 30_000,
+        recv_timeout: 30_000
       ]
     )
+    |> process_query(false)
+  end
+
+  defp monitor_query_id(monitor_id, host, token, num) when num < 1000 do
+    :timer.sleep(50)
+
+    response =
+      HTTPoison.get!(
+        "#{host}/queries/#{monitor_id}/result",
+        [
+          {"Content-Type", "application/json"},
+          {"accept", "application/snowflake"},
+          {"Authorization", "Snowflake Token=\"#{token}\""}
+        ],
+        hackney: [
+          pool: :snowflake_pool,
+          timeout: 180_000,
+          recv_timeout: 180_000
+        ]
+      )
 
     if Map.get(response, :body, "") == "" do
       monitor_query_id(monitor_id, host, token, num + 1)
@@ -129,7 +240,6 @@ defmodule SnowflakeEx.HTTPClient do
         {"x-amz-server-side-encryption-customer-key-md5", encryption_key_md5}
       ],
       hackney: [
-        :insecure,
         pool: :s3_pool
       ]
     )
@@ -147,7 +257,6 @@ defmodule SnowflakeEx.HTTPClient do
         {"Authorization", "Snowflake Token=\"#{token}\""}
       ],
       hackney: [
-        :insecure,
         pool: :snowflake_pool,
         timeout: 180_000,
         recv_timeout: 180_000
@@ -158,26 +267,27 @@ defmodule SnowflakeEx.HTTPClient do
 
   # Executes a query, then monitors the response.
   defp run_query(host, token, query, [], true, _first_chunk) do
-    HTTPoison.post!(
-      snowflake_query_url(host),
-      snowflake_query_headers(query, true),
-      [
-        {"Content-Type", "application/json"},
-        {"accept", "application/snowflake"},
-        {"Authorization", "Snowflake Token=\"#{token}\""}
-      ],
-      hackney: [
-        :insecure,
-        pool: :snowflake_pool,
-        timeout: 180_000,
-        recv_timeout: 180_000
-      ]
-    )
-    |> Map.get(:body)
-    |> Jason.decode!()
-    |> Map.get("data")
-    |> Map.get("queryId")
-    |> monitor_query_id(host, token, 1)
+    query_id =
+      HTTPoison.post!(
+        snowflake_query_url(host),
+        snowflake_query_headers(query, true),
+        [
+          {"Content-Type", "application/json"},
+          {"accept", "application/snowflake"},
+          {"Authorization", "Snowflake Token=\"#{token}\""}
+        ],
+        hackney: [
+          pool: :snowflake_pool,
+          timeout: 180_000,
+          recv_timeout: 180_000
+        ]
+      )
+      |> Map.get(:body)
+      |> Jason.decode!()
+      |> Map.get("data")
+      |> Map.get("queryId")
+
+    {:ok, query_id}
   end
 
   defp run_query(host, token, query, _params, true, _first_chunk) do
@@ -190,7 +300,6 @@ defmodule SnowflakeEx.HTTPClient do
         {"Authorization", "Snowflake Token=\"#{token}\""}
       ],
       hackney: [
-        :insecure,
         pool: :snowflake_pool,
         timeout: 180_000,
         recv_timeout: 180_000
@@ -233,8 +342,36 @@ defmodule SnowflakeEx.HTTPClient do
     |> process_query_result_format(data["data"], first_chunk)
   end
 
-  defp process_response(%{"success" => false, "message" => message, "code" => error_code, "data" => %{"sqlState" => sql_error}}, _) do
-    {:error, %SnowflakeEx.Result{success: false, messages: [%{message: message, severity: :error, error_code: error_code, sql_error: sql_error}]}}
+  defp process_response(
+         %{
+           "success" => false,
+           "message" => message,
+           "code" => error_code,
+           "data" => %{"sqlState" => sql_error}
+         },
+         _
+       ) do
+    {:error,
+     %SnowflakeEx.Result{
+       success: false,
+       messages: [
+         %{message: message, severity: :error, error_code: error_code, sql_error: sql_error}
+       ]
+     }}
+  end
+
+  defp process_response(%{"code" => "390112", "success" => false}, _) do
+    {:error,
+     %SnowflakeEx.Result{
+       success: false,
+       messages: [
+         %{
+           message: "Your session has expired. Please login again.",
+           severity: :error,
+           error_code: "390112"
+         }
+       ]
+     }}
   end
 
   defp process_query_result_format(
@@ -272,7 +409,15 @@ defmodule SnowflakeEx.HTTPClient do
 
     columns = Enum.map(row_type, fn %{"name" => name} -> name end)
 
-    {:ok, %SnowflakeEx.Result{success: false, rows: row_data, columns: columns, num_rows: total, metadata: data, messages: %{message: row_data, severity: :debug}}}
+    {:ok,
+     %SnowflakeEx.Result{
+       success: true,
+       rows: row_data,
+       columns: columns,
+       num_rows: total,
+       metadata: data,
+       messages: %{message: row_data, severity: :debug}
+     }}
   end
 
   defp process_query_result_format(
@@ -310,7 +455,15 @@ defmodule SnowflakeEx.HTTPClient do
 
     columns = Enum.map(row_type, fn %{"name" => name} -> name end)
 
-    {:ok, %SnowflakeEx.Result{success: false, rows: row_data, columns: columns, num_rows: total, metadata: data, messages: [%{message: row_data, severity: :info}]}}
+    {:ok,
+     %SnowflakeEx.Result{
+       success: true,
+       rows: row_data,
+       columns: columns,
+       num_rows: total,
+       metadata: data,
+       messages: [%{message: row_data, severity: :info}]
+     }}
   end
 
   defp process_query_result_format(
@@ -321,7 +474,16 @@ defmodule SnowflakeEx.HTTPClient do
     row_data = process_row_data(rows, row_type)
 
     columns = Enum.map(row_type, fn %{"name" => name} -> name end)
-    {:ok, %SnowflakeEx.Result{success: false, rows: row_data, columns: columns, num_rows: total, metadata: data, messages: [%{message: row_data, severity: :info}]}}
+
+    {:ok,
+     %SnowflakeEx.Result{
+       success: true,
+       rows: row_data,
+       columns: columns,
+       num_rows: total,
+       metadata: data,
+       messages: [%{message: row_data, severity: :info}]
+     }}
   end
 
   defp process_row_data(rows, row_type) do
@@ -347,11 +509,30 @@ defmodule SnowflakeEx.HTTPClient do
 
   defp process_login(%{
          "data" => %{
+           "sessionId" => session_id,
            "token" => token,
-           "sessionId" => session_id
+           "validityInSeconds" => token_valid_seconds,
+           "masterToken" => master_token,
+           "masterValidityInSeconds" => master_token_valid_seconds
          }
-       }),
-       do: {:ok, %{token: token, session_id: session_id}}
+       }) do
+    now = DateTime.now!("Etc/UTC")
+
+    token_expires_at = DateTime.add(now, token_valid_seconds, :second)
+
+    master_token_expires_at = DateTime.add(now, master_token_valid_seconds, :second)
+
+    {:ok,
+     %{
+       session_id: session_id,
+       token: token,
+       token_expires_seconds: token_valid_seconds,
+       token_expires_utc: token_expires_at,
+       master_token: token,
+       master_token_expires_seconds: token_valid_seconds,
+       master_token_expires_utc: master_token_expires_at,
+     }}
+  end
 
   defp process_login(_), do: {:error, "Invalid user/pass or host."}
 
