@@ -18,7 +18,8 @@ defmodule SnowflakeEx.HTTPClient do
         CLIENT_APP_VERSION: "1.5.3",
         LOGIN_NAME: username,
         SESSION_PARAMETERS: Map.merge(%{
-          VALIDATE_DEFAULT_PARAMETERS: true
+          VALIDATE_DEFAULT_PARAMETERS: true,
+          QUOTED_IDENTIFIERS_IGNORE_CASE: true
         }, snowflake_options),
         CLIENT_ENVIRONMENT: %{
           schema: schema,
