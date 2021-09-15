@@ -26,7 +26,7 @@ defmodule SnowflakeEx.MixProject do
   defp deps do
     [
       {:db_connection, "~> 2.2"},
-      {:ecto_sql, "~> 3.5"},
+      {:ecto_sql, "~> 3.7"},
       {:jason, "~> 1.2"},
       {:hackney, "~> 1.16"},
       {:mix_test_watch, "~> 1.0", only: :dev, runtime: false},

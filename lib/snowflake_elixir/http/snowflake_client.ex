@@ -64,9 +64,8 @@ defmodule SnowflakeEx.HTTPClient do
   def query(host, token, query, opts) do
     params = Keyword.get(opts, :params, [])
     async = Keyword.get(opts, :async, false)
-    first_only = Keyword.get(opts, :first_only, false)
 
-    run_query(host, token, query, params, async, first_only)
+    run_query(host, token, query, params, async)
   end
 
   def insert(host, token, query, _params, connect_opts) do
@@ -87,7 +86,7 @@ defmodule SnowflakeEx.HTTPClient do
     )
     |> Map.get(:body)
     |> Jason.decode!()
-    |> process_response(false)
+    |> process_response()
   end
 
   defp monitor_query_id(monitor_id, host, token, num) when num < 1000 do
@@ -138,7 +137,7 @@ defmodule SnowflakeEx.HTTPClient do
     |> :zlib.gunzip()
   end
 
-  defp run_query(host, token, query, [], false, first_chunk) do
+  defp run_query(host, token, query, [], false) do
     HTTPoison.post!(
       snowflake_query_url(host),
       snowflake_query_headers(query, false),
@@ -154,11 +153,11 @@ defmodule SnowflakeEx.HTTPClient do
         recv_timeout: 180_000
       ]
     )
-    |> process_query(first_chunk)
+    |> process_query()
   end
 
   # Executes a query, then monitors the response.
-  defp run_query(host, token, query, [], true, _first_chunk) do
+  defp run_query(host, token, query, [], true) do
     HTTPoison.post!(
       snowflake_query_url(host),
       snowflake_query_headers(query, true),
@@ -181,7 +180,7 @@ defmodule SnowflakeEx.HTTPClient do
     |> monitor_query_id(host, token, 1)
   end
 
-  defp run_query(host, token, query, _params, true, _first_chunk) do
+  defp run_query(host, token, query, _params, true) do
     HTTPoison.post!(
       snowflake_query_url(host),
       snowflake_query_headers(query, false),
@@ -220,18 +219,18 @@ defmodule SnowflakeEx.HTTPClient do
   # for everything else, just return the value
   defp decode_column(_, value), do: value
 
-  defp process_query(%{status_code: 200, body: body}, first_chunk) do
+  defp process_query(%{status_code: 200, body: body} = bar) do
     Jason.decode!(body)
-    |> process_response(first_chunk)
+    |> process_response()
   end
 
   defp process_query(_, _), do: {:error, "error"}
 
-  defp process_response(%{"success" => true} = data, first_chunk) do
+  defp process_response(%{"success" => true} = data) do
     data
     |> Map.get("data")
     |> Map.get("queryResultFormat")
-    |> process_query_result_format(data["data"], first_chunk)
+    |> process_query_result_format(data["data"])
   end
 
   defp process_response(%{"success" => false, "message" => message, "code" => error_code, "data" => %{"sqlState" => sql_error}}, _) do
@@ -249,23 +248,12 @@ defmodule SnowflakeEx.HTTPClient do
              "x-amz-server-side-encryption-customer-key" => key,
              "x-amz-server-side-encryption-customer-key-md5" => md5
            }
-         } = data,
-         first_chunk
+         } = data
        ) do
-    parsed =
-      if first_chunk do
-        chunks
-        |> Enum.map(fn %{"url" => url} -> url end)
-        |> Enum.map(fn url -> s3_download(url, key, md5) end)
+    urls = Enum.map(chunks, fn %{"url" => url} -> url end)
+    parsed = Task.async_stream(urls, fn(url) -> s3_download(url, key, md5) end, max_concurrency: 10)
+        |> Enum.map(fn({:ok, result}) -> result end)
         |> Enum.join(", ")
-      else
-        url =
-          chunks
-          |> Enum.map(fn %{"url" => url} -> url end)
-          |> hd
-
-        s3_download(url, key, md5)
-      end
 
     rows = Jason.decode!("[#{parsed}]")
 
@@ -287,23 +275,13 @@ defmodule SnowflakeEx.HTTPClient do
              "x-amz-server-side-encryption-customer-key" => key,
              "x-amz-server-side-encryption-customer-key-md5" => md5
            }
-         } = data,
-         first_chunk
+         } = data
        ) do
     parsed =
-      if first_chunk do
         chunks
         |> Enum.map(fn %{"url" => url} -> url end)
         |> Enum.map(fn url -> s3_download(url, key, md5) end)
         |> Enum.join(", ")
-      else
-        url =
-          chunks
-          |> Enum.map(fn %{"url" => url} -> url end)
-          |> hd
-
-        s3_download(url, key, md5)
-      end
 
     rows = Jason.decode!("[#{parsed}]")
 
@@ -316,8 +294,7 @@ defmodule SnowflakeEx.HTTPClient do
 
   defp process_query_result_format(
          "json",
-         %{"rowset" => rows, "rowtype" => row_type, "total" => total} = data,
-         _first_chunk
+         %{"rowset" => rows, "rowtype" => row_type, "total" => total} = data
        ) do
     row_data = process_row_data(rows, row_type)
 
@@ -368,7 +345,7 @@ defmodule SnowflakeEx.HTTPClient do
       },
       describedJobId: nil,
       isInternal: false,
-      asyncExec: async
+      asyncExec: false
     }
     |> Jason.encode!()
   end
@@ -377,6 +354,7 @@ defmodule SnowflakeEx.HTTPClient do
     %{
       sqlText: query,
       sequenceId: 0,
+      bindings: bindings,
       bindStage: nil,
       describeOnly: false,
       parameters: %{
@@ -384,7 +362,7 @@ defmodule SnowflakeEx.HTTPClient do
       },
       describedJobId: nil,
       isInternal: false,
-      bindings: bindings
+      asyncExec: false
     }
     |> Jason.encode!()
   end
