@@ -280,7 +280,8 @@ defmodule SnowflakeEx.HTTPClient do
     parsed =
         chunks
         |> Enum.map(fn %{"url" => url} -> url end)
-        |> Enum.map(fn url -> s3_download(url, key, md5) end)
+        |> Task.async_stream(fn(url) -> s3_download(url, key, md5) end, max_concurrency: 10)
+        |> Enum.map(fn({:ok, result}) -> result end)
         |> Enum.join(", ")
 
     rows = Jason.decode!("[#{parsed}]")
