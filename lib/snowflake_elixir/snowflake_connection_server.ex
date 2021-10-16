@@ -71,6 +71,10 @@ defmodule SnowflakeEx.SnowflakeConnectionServer do
         if schema != nil do
           SnowflakeEx.HTTPClient.query(host, token, "use schema #{schema}", [])
         end
+        # use role
+        if role != nil do
+          SnowflakeEx.HTTPClient.query(host, token, "use role #{role}", [])
+        end
 
         {:ok, token: token, opts: opts, session_id: session_id}
       {:error, reason} -> {:stop, reason}
