@@ -89,6 +89,58 @@ defmodule SnowflakeEx.HTTPClient do
     |> process_response()
   end
 
+  def get_query_by_id(host, token, query_id) do
+    HTTPoison.get!(
+      "#{host}/queries/#{query_id}/result",
+      [
+        {"accept", "application/snowflake"},
+        {"Content-Type", "application/json"},
+        {"Authorization", "Snowflake Token=\"#{token}\""}
+      ],
+      hackney: [
+        pool: :snowflake_pool,
+        timeout: 30_000,
+        recv_timeout: 30_000
+      ]
+    )
+    |> process_query(false)
+  end
+
+  def query_info(host, token, query_id)
+      when is_binary(host) and is_binary(token) and is_binary(query_id) do
+    HTTPoison.get!(
+      "#{host}/monitoring/queries/#{query_id}",
+      [
+        {"accept", "application/json"},
+        {"Content-Type", "application/json"},
+        {"Authorization", "Snowflake Token=\"#{token}\""}
+      ],
+      hackney: [
+        pool: :snowflake_pool,
+        timeout: 5000,
+        recv_timeout: 5000
+      ]
+    )
+    |> Map.get(:body)
+    |> Jason.decode!()
+  end
+
+  def is_query_complete(host, token, query_id)
+      when is_binary(host) and is_binary(token) and is_binary(query_id) do
+    query_info(host, token, query_id)
+    |> process_query_complete()
+  end
+
+  defp process_query_complete(%{"data" => %{"queries" => [%{"status" => "RUNNING"}]}}), do: false
+  defp process_query_complete(%{"data" => %{"queries" => [%{"status" => "SUCCESS"}]}}), do: true
+
+  defp process_query_complete(%{"data" => %{"queries" => [%{"status" => "FAILED_WITH_ERROR"}]}}),
+       do: true
+
+  defp process_query_complete(%{"data" => %{"queries" => [%{"status" => _}]}}), do: true
+  defp process_query_complete(%{"data" => %{"queries" => []}}), do: false
+  defp process_query_complete(_), do: true
+
   defp monitor_query_id(monitor_id, host, token, num) when num < 1000 do
     :timer.sleep(50)
 
@@ -156,8 +208,9 @@ defmodule SnowflakeEx.HTTPClient do
     |> process_query()
   end
 
-  # Executes a query, then monitors the response.
+  # Executes a query, then returns the async response (not the actual query).
   defp run_query(host, token, query, [], true) do
+    f = snowflake_query_headers(query, true)
     HTTPoison.post!(
       snowflake_query_url(host),
       snowflake_query_headers(query, true),
@@ -175,9 +228,6 @@ defmodule SnowflakeEx.HTTPClient do
     )
     |> Map.get(:body)
     |> Jason.decode!()
-    |> Map.get("data")
-    |> Map.get("queryId")
-    |> monitor_query_id(host, token, 1)
   end
 
   defp run_query(host, token, query, _params, true) do
@@ -201,12 +251,45 @@ defmodule SnowflakeEx.HTTPClient do
   end
 
   # Decodes a column type of null to nil
-  defp decode_column(%{"scale" => 0, "type" => "fixed", "byteLength" => nil}, nil) do
+  def decode_column(%{"scale" => 0, "type" => "fixed", "byteLength" => nil}, nil) do
     nil
   end
 
+  def decode_column(%{"type" => "date"}, value) do
+    unix_time = String.to_integer(value) * 86400
+
+    case DateTime.from_unix(unix_time) do
+      {:ok, time} -> DateTime.to_date(time)
+      _ -> {:error, value}
+    end
+  end
+
+  def decode_column(%{"type" => "timestamp_ntz"}, value) do
+    String.replace(value, ".", "")
+    |> String.slice(0..-4)
+    |> String.to_integer()
+    |> DateTime.from_unix!(:microsecond)
+  end
+
+  def decode_column(%{"type" => "timestamp_tz"}, value) do
+    value
+    |> String.split(" ")
+    |> hd
+    |> String.replace(".", "")
+    |> String.slice(0..-4)
+    |> String.to_integer()
+    |> DateTime.from_unix!(:microsecond)
+  end
+
+  def decode_column(%{"type" => "timestamp_ltz"}, value) do
+    String.replace(value, ".", "")
+    |> String.slice(0..-4)
+    |> String.to_integer()
+    |> DateTime.from_unix!(:second)
+  end
+
   # Decodes an integer column type
-  defp decode_column(%{"scale" => 0, "type" => "fixed", "byteLength" => nil}, value) do
+  def decode_column(%{"scale" => 0, "type" => "fixed", "byteLength" => nil}, value) do
     case Integer.parse(value) do
       {num, ""} ->
         num
@@ -216,10 +299,7 @@ defmodule SnowflakeEx.HTTPClient do
     end
   end
 
-  # for everything else, just return the value
-  defp decode_column(_, value), do: value
-
-  defp process_query(%{status_code: 200, body: body} = bar) do
+  defp process_query(%{status_code: 200, body: body}) do
     Jason.decode!(body)
     |> process_response()
   end
@@ -231,10 +311,6 @@ defmodule SnowflakeEx.HTTPClient do
     |> Map.get("data")
     |> Map.get("queryResultFormat")
     |> process_query_result_format(data["data"])
-  end
-
-  defp process_response(%{"success" => false, "message" => message, "code" => error_code, "data" => %{"sqlState" => sql_error}}, _) do
-    {:error, %SnowflakeEx.Result{success: false, messages: [%{message: message, severity: :error, error_code: error_code, sql_error: sql_error}]}}
   end
 
   defp process_query_result_format(
@@ -346,7 +422,7 @@ defmodule SnowflakeEx.HTTPClient do
       },
       describedJobId: nil,
       isInternal: false,
-      asyncExec: false
+      asyncExec: async
     }
     |> Jason.encode!()
   end
