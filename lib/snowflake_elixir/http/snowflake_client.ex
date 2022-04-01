@@ -103,7 +103,7 @@ defmodule SnowflakeEx.HTTPClient do
         recv_timeout: 30_000
       ]
     )
-    |> process_query(false)
+    |> process_query()
   end
 
   def query_info(host, token, query_id)
@@ -163,7 +163,7 @@ defmodule SnowflakeEx.HTTPClient do
       monitor_query_id(monitor_id, host, token, num + 1)
     else
       response
-      |> process_query(false)
+      |> process_query()
     end
   end
 
@@ -299,12 +299,15 @@ defmodule SnowflakeEx.HTTPClient do
     end
   end
 
-  defp process_query(%{status_code: 200, body: body}) do
+  # for everything else, just return the value
+  def decode_column(_, value), do: value
+
+  defp process_query(%HTTPoison.Response{status_code: 200, body: body}) do
     Jason.decode!(body)
     |> process_response()
   end
 
-  defp process_query(_, _), do: {:error, "error"}
+  defp process_query(_), do: {:error, "error"}
 
   defp process_response(%{"success" => true} = data) do
     data
