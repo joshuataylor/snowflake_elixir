@@ -255,6 +255,8 @@ defmodule SnowflakeEx.HTTPClient do
     nil
   end
 
+  def decode_column(_, nil), do: nil
+
   def decode_column(%{"type" => "date"}, value) do
     unix_time = String.to_integer(value) * 86400
 
