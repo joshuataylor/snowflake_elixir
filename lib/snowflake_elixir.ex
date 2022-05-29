@@ -129,6 +129,18 @@ defmodule SnowflakeEx do
     end
   end
 
+  @doc """
+  Runs an (extended) query and returns the result or raises `SnowflakeEx.Error` if
+  there was an error. See `query/3`.
+  """
+  @spec query!(conn, iodata, list, [execute_option]) :: SnowflakeEx.Result.t()
+  def query!(conn, statement, params, opts \\ []) do
+    case query(conn, statement, params, opts) do
+      {:ok, result} -> result
+      {:error, err} -> raise err
+    end
+  end
+
   defp query_prepare_execute(conn, query, params, opts) do
     case DBConnection.prepare_execute(conn, query, params, opts) do
       {:ok, _, result} -> {:ok, result}

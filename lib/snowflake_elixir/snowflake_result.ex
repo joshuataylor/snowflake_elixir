@@ -11,3 +11,15 @@ defmodule SnowflakeEx.Result do
 
   defstruct columns: nil, rows: nil, num_rows: 0, metadata: [], messages: [], statement: nil, success: false
 end
+
+if Code.ensure_loaded?(Table.Reader) do
+  defimpl Table.Reader, for: SnowflakeEx.Result do
+    def init(%{columns: columns}) when columns in [nil, []] do
+      {:rows, %{columns: []}, []}
+    end
+
+    def init(result) do
+      {:rows, %{columns: result.columns}, result.rows}
+    end
+  end
+end
