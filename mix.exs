@@ -6,7 +6,7 @@ defmodule SnowflakeEx.MixProject do
   def project do
     [
       app: :snowflake_elixir,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -26,7 +26,7 @@ defmodule SnowflakeEx.MixProject do
   defp deps do
     [
       {:db_connection, "~> 2.2"},
-      {:ecto_sql, "~> 3.7"},
+      {:ecto_sql, "~> 3.10"},
       {:jason, "~> 1.2"},
       {:hackney, "~> 1.16"},
       {:mix_test_watch, "~> 1.0", only: :dev, runtime: false},
